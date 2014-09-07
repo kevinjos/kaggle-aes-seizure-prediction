@@ -18,8 +18,6 @@ from collections import deque
 from PyQt4 import QtGui, QtCore
 import pyqtgraph as pg
 
-import objgraph
-
 class FileHandler(object):
   DATA_DIR = '/home/kjs/repos/kaggle-aes-seizure-prediction/data/'
   if not os.path.exists(DATA_DIR):
@@ -27,7 +25,8 @@ class FileHandler(object):
     print "Configure the data directory to match local directory structure"
 
   def __init__(self):
-    self.file_in = 'Dog_1/Dog_1_preictal_segment_0001.mat'
+    #Also prompted by GUI to choose a file name (film)
+    self.file_in = 'Dog_1_preictal_segment_0001.mat'
 
   def get_data(self):
     self.file_in = "_".join(self.file_in.split("_")[0:2]) + "/" + self.file_in
@@ -69,7 +68,9 @@ class Cine(object):
       self.layout.addWidget(getattr(self, 'fftplot_' + i))
 
   def start(self):
-    self.filehandler.file_in = str(self.file_in.getText(self.widget, "", "what film?")[0])
+    file_provided, file_in = self.file_in.getText(self.widget, "", "what film?")
+    if file_provided:
+      self.filehandler.file_in = str(file_in)
     self.filehandler.get_data()
     num_channels = self.filehandler.data[0].shape[0]
     num_samples = self.filehandler.data[0].shape[1]
@@ -109,10 +110,9 @@ class Cine(object):
       if time_s % 5000 == 0 and len(y_val[0]) >= fft_stop:
         for i in range(num_channels):
           outputa = self.do_fft(np.array(list(islice(y_val[i], fft_start, fft_stop)), dtype=complex))
-          #getattr(self, 'fftplot_' + str(i)).plot(bins[:200], outputa[0:200], clear=True)
-          #getattr(self, 'rawplot_' + str(i)).plot([x/5000.0 for x in x_time], y_val[i], clear=True)
-        #self.app.processEvents()
-        print objgraph.show_most_common_types()
+          getattr(self, 'fftplot_' + str(i)).plot(bins[:200], outputa[0:200], clear=True)
+          getattr(self, 'rawplot_' + str(i)).plot([x/5000.0 for x in x_time], y_val[i], clear=True)
+        self.app.processEvents()
 
 if __name__ == '__main__':
   fh = FileHandler()
