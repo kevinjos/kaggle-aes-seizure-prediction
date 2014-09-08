@@ -17,29 +17,7 @@ from itertools import islice
 from collections import deque
 from PyQt4 import QtGui, QtCore
 import pyqtgraph as pg
-
-class FileHandler(object):
-  DATA_DIR = '/home/kjs/repos/kaggle-aes-seizure-prediction/data/'
-  if not os.path.exists(DATA_DIR):
-    DATA_DIR = None
-    print "Configure the data directory to match local directory structure"
-
-  def __init__(self):
-    #Also prompted by GUI to choose a file name (film)
-    self.file_in = 'Dog_1_preictal_segment_0001.mat'
-
-  def get_data(self):
-    self.file_in = "_".join(self.file_in.split("_")[0:2]) + "/" + self.file_in
-    with open(self.DATA_DIR + self.file_in) as f:
-      mat = scipy.io.loadmat(f)
-      keys = mat.keys()
-      i = [mat.keys().index(key) for key in mat.keys() if key.find('segment') > 0][0]
-      data = mat[mat.keys()[i]]
-    self.data = data[0,0]
-    self.data_length_sec = self.data[1][0]
-    self.frequency = self.data[2][0]
-    self.electrode_names = self.data[3][0]
-    self.sequence_num = self.data[4]
+import file_handler
 
 class Cine(object):
   def __init__(self, FileHandler):
@@ -68,7 +46,7 @@ class Cine(object):
       self.layout.addWidget(getattr(self, 'fftplot_' + i))
 
   def start(self):
-    file_provided, file_in = self.file_in.getText(self.widget, "", "what film?")
+    file_in, file_provided = self.file_in.getText(self.widget, "", "what film?")
     if file_provided:
       self.filehandler.file_in = str(file_in)
     self.filehandler.get_data()
@@ -115,7 +93,7 @@ class Cine(object):
         self.app.processEvents()
 
 if __name__ == '__main__':
-  fh = FileHandler()
+  fh = file_handler.FileHandler()
   cine = Cine(fh)
   cine.app.exec_()
     
