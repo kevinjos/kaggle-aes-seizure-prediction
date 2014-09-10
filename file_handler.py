@@ -10,6 +10,7 @@ data[4] == sequence: the index of the data segment within the one hour series of
 
 import scipy.io
 import os
+import numpy as np
 
 class FileHandler(object):
   DATA_DIR = '/home/kjs/repos/kaggle-aes-seizure-prediction/data/'
@@ -21,7 +22,7 @@ class FileHandler(object):
     #Also prompted by GUI to choose a file name (film)
     self.file_in = 'Dog_1_preictal_segment_0001.mat'
 
-  def get_data(self):
+  def set_data(self):
     self.file_in = "_".join(self.file_in.split("_")[0:2]) + "/" + self.file_in
     with open(self.DATA_DIR + self.file_in) as f:
       mat = scipy.io.loadmat(f)
@@ -33,25 +34,31 @@ class FileHandler(object):
     self.frequency = self.data[2][0]
     self.electrode_names = self.data[3][0]
     self.sequence_num = self.data[4]
+    
+  def append_file_name(self):
+    self.data[3] = np.append(self.data[3], self.file_in.split("/")[1])
 
   def set_train_interical_preictal_and_test_files(self):
     '''
     self.segmented_train_files is a dictionary with two keys, interictal and preictal
     each key has a set for a value of all data from all subjects in the give category
     '''
-    self.all_train_files, self.all_test_files, self.segmented_train_files = [], [], {}
-    P, I = 'preictal', 'interictal'
+    self.all_train_files, self.all_test_files, self.segmented_train_files, self.seg_train_files = [], [], {}, {}
+    P, I, D, H = 'preictal', 'interictal', 'Dog', 'Patient'
     self.segmented_train_files[I], self.segmented_train_files[P] = [], []
+    self.seg_train_files[D], self.seg_train_files[H] = [], []
     
     subjects = os.listdir(self.DATA_DIR)
     for subject in subjects:
-      self.all_train_files.extend([f for f in os.listdir(self.DATA_DIR + '/' + subject) if f.find('test') == -1])
-      self.all_test_files.extend([f for f in os.listdir(self.DATA_DIR + '/' + subject) if f.find('test') != -1])
+      if subject.find(D) > -1 or subject.find(H) > -1:
+        self.all_train_files.extend([f for f in os.listdir(self.DATA_DIR + '/' + subject) if f.find('test') == -1])
+        self.all_test_files.extend([f for f in os.listdir(self.DATA_DIR + '/' + subject) if f.find('test') != -1])
     for f in self.all_train_files:
       if f.find(I) > -1:
         self.segmented_train_files[I].append(f)
       elif f.find(P) > -1:
         self.segmented_train_files[P].append(f)
-      else:
-        print "Not adding %s" % f
-        
+      if f.find(D) > -1:
+        self.seg_train_files[D].append(f)
+      elif f.find(H) > -1:
+        self.seg_train_files[H].append(f) 

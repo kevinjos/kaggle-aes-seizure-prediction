@@ -18,10 +18,11 @@ from collections import deque
 from PyQt4 import QtGui, QtCore
 import pyqtgraph as pg
 import file_handler
+import objgraph
 
 class Cine(object):
-  def __init__(self, FileHandler):
-    self.filehandler = FileHandler
+  def __init__(self):
+    self.filehandler = file_handler.FileHandler()
     self.app = QtGui.QApplication(sys.argv)
     self.widget = QtGui.QWidget()
     self.start_btn = QtGui.QPushButton('Start')
@@ -47,9 +48,9 @@ class Cine(object):
 
   def start(self):
     file_in, file_provided = self.file_in.getText(self.widget, "", "what film?")
-    if file_provided:
+    if file_in:
       self.filehandler.file_in = str(file_in)
-    self.filehandler.get_data()
+    self.filehandler.set_data()
     num_channels = self.filehandler.data[0].shape[0]
     num_samples = self.filehandler.data[0].shape[1]
     self.make_iterators(num_channels)
@@ -93,8 +94,7 @@ class Cine(object):
         self.app.processEvents()
 
 if __name__ == '__main__':
-  fh = file_handler.FileHandler()
-  cine = Cine(fh)
+  cine = Cine()
   cine.app.exec_()
     
 
