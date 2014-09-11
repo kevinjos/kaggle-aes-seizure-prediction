@@ -17,8 +17,9 @@ Features
 
 Zero crossings:
 
-  * Total length of wave
   * Count local maxima
+
+Total length of wave  
 
 Frequency Bin Intervals  
 Delta FBI  
@@ -29,10 +30,22 @@ Information content:
 
 github.com/lambdaloop feature extractor?  
 Phase syncronisity of electrodes (cohearence)  
+pyeeg  
 
   * Without proper mapping of electrodes, electrode choice for phase sync is arbitraty
 
 Autocorrelation  
+
+Random projection  
+Convolution  
+Some genetic algorythm  
+Neural net on 1D pixal:amplitude transformed into a hilbert system
+
+Check small time windows  
+  * EX: Seizure signaled in 10s window during 60min preictal
+
+
+
 
 Clinical Background
 -------------------

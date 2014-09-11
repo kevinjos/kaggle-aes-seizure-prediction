@@ -46,34 +46,45 @@ def main():
   rank = comm.Get_rank()
   size = comm.Get_size()
 
-  train_file_buffer = np.array([''.zfill(37)])
-  train_files = np.array([np.array([f]) for f in fh.all_train_files])
-  train_data_buffer = np.array([np.zeros(4500000) for i in range(24)])
+  fname = np.array([''.zfill(37)])
+  data = np.array([np.zeros(4500000) for i in range(24)], 
+                  dtype=np.int_)
+  stop_iteration = np.zeros(1)
 
+  train_files = [np.array([f]) for f in fh.all_train_files]
   if rank == 0:
     i = 0
-    for f in train_files:
+    for fname in train_files:
       i += 1
       proc = (i % (size - 1)) + 1
 
-      fh.file_in = f[0]
+      fh.file_in = fname[0]
       fh.set_data()
 
-      data = fh.data[0]
+      data = np.int_(fh.data[0])
 
-      comm.Send([f, MPI.SIGNED_CHAR], dest=proc)
-      comm.Send([data, MPI.SIGNED_INT], dest=proc)
+      comm.Send([stop_iteration, MPI.INT], dest=proc)
+      comm.Send([fname, MPI.SIGNED_CHAR], dest=proc)
+      comm.Send([data, MPI.LONG], dest=proc)
       features = comm.recv(source=MPI.ANY_SOURCE)
       record_features(features)
+    stop_iteration[0] = 1
+    for proc in range(1, size):
+      comm.Send(stop_iteration, dest=proc)
   else:    
-    for i in range(len(train_files)):
-      comm.Recv([train_file_buffer, MPI.SIGNED_CHAR], source=0)
-      comm.Recv([train_data_buffer, MPI.SIGNED_INT], source=0)
+    while True:
+      comm.Recv([stop_iteration, MPI.INT], source=0)
+      if stop_iteration[0]:
+        break
+      comm.Recv([fname, MPI.SIGNED_CHAR], source=0)
+      comm.Recv([data, MPI.LONG], source=0)
 
-      fe = FeatureExtractor(train_data_buffer)
-      fe.set_features(train_file_buffer[0])
+      fe = FeatureExtractor(data)
+      fe.set_features(fname[0])
 
       comm.send(fe.features, dest=0)
+      
+  print "proc %s is complete" % rank
 
 if __name__ == '__main__':
-  MAIN()
+  main()
