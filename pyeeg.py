@@ -81,8 +81,6 @@ def hurst(X):
     S_T[i] = std(X[:i+1])
     X_T = Y - T * Ave_T[i]
     R_T[i] = max(X_T[:i + 1]) - min(X_T[:i + 1])
-    if i % 100:
-      print "%s percent complete" % (i/float(N))
     
   R_S = R_T / S_T
   R_S = log(R_S)
@@ -315,7 +313,7 @@ def first_order_diff(X):
 
   return D
 
-def pfd(X, D=None):
+def pfd(X_size, D):
   """Compute Petrosian Fractal Dimension of a time series from either two 
   cases below:
     1. X, the time series of type list (default)
@@ -334,7 +332,7 @@ def pfd(X, D=None):
   for i in xrange(1,len(D)):
     if D[i]*D[i-1]<0:
       N_delta += 1
-  n = len(X)
+  n = X_size
   return log10(n)/(log10(n)+log10(n/n+0.4*N_delta))
 
 

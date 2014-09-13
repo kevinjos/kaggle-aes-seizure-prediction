@@ -20,7 +20,7 @@ class FileHandler(object):
 
   def __init__(self):
     #Also prompted by GUI to choose a file name (film)
-    self.file_in = 'Dog_1_preictal_segment_0001.mat'
+    self.file_in = 'Patient_1_preictal_segment_0009.mat'
 
   def set_data(self):
     self.file_in = "_".join(self.file_in.split("_")[0:2]) + "/" + self.file_in
@@ -37,6 +37,9 @@ class FileHandler(object):
     
   def append_file_name(self):
     self.data[3] = np.append(self.data[3], self.file_in.split("/")[1])
+
+  def learn_our_data(self):
+    pass
 
   def set_train_interical_preictal_and_test_files(self):
     '''
