@@ -57,7 +57,7 @@ Electrode naming conventions
 
 Electrode naming across datasets is not standard.
 
-Patient_1: 16 electrodes named LD_1, ..., LD_8, RD_1, ..., RD_8
+Patient_1: 15 electrodes named LD_1, LD_3,..., LD_8, RD_1, ..., RD_8
 
 Patient_2: 24 electrodes named LGT_01, ..., LGT_24
 
@@ -69,4 +69,16 @@ Dog_3: 16 electrodes named NVC0906_22_007_Ecog_c001, ..., NVC0906_22_007_Ecog_c0
 
 Dog_4: 16 electrodes named NVC1202_26_003_Ecog_c001, ..., NVC1202_26_003_Ecog_c016
 
-Dog_5: 16 electrodes named NVC0905_22_004_Ecog_c001, ..., NVC0905_22_004_Ecog_c016
+Dog_5: 15 electrodes named NVC0905_22_004_Ecog_c001, ..., NVC0905_22_004_Ecog_c016; NVC0905_22_004_Ecog_c004 missing;
+
+Electrode mapping
+-----------------
+
+For the dogs, the electrodes are positioned horizontally with two 4-contact strips on each side of the brain. Numbering goes from anterior to posterior, starting on the left superior strip. For the humans, there really is no standard system. Electordes are numbered on subdural grids, but grids can be inserted in any orientation. The best one can glean from the naming system is general anatomic coverage.  
+
+Scoring
+--------
+
+Submission are in csv format  
+sample_name,probability_preictal  
+Scoring is done using the Area Under the Curve (AUC) of the Receiver operating characteristic (ROC)  
