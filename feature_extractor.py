@@ -5,7 +5,7 @@ import pyeeg
 import file_handler
 import csv
 import time
-from decs import coroutine
+from decs import coroutine, timed
 from mpi4py import MPI
 
 '''
@@ -35,8 +35,10 @@ class FeatureExtractor(object):
     self.set_meanval()
     self.set_samplesize()
     #self.set_hurst()
-    #self.set_first_order_diff()
-    #self.set_pfd()
+    self.set_first_order_diff()
+    self.set_pfd()
+    self.set_hjorth()
+    self.set_higuchi()
 
   def set_filen(self, filen):
       self.features['filen'] = filen.split('.')[0]
@@ -87,6 +89,7 @@ class FeatureExtractor(object):
       value = pyeeg.hurst(self.data[i])
       self.features[name] = value
 
+  @timed
   def set_first_order_diff(self):
     '''
     used in other features
@@ -97,14 +100,33 @@ class FeatureExtractor(object):
       value = pyeeg.first_order_diff(self.data[i])
       self.fprime[name] = value
 
+  @timed
   def set_pfd(self):
     '''
     petrosian fractal dimension
     '''
     for i in xrange(self.data.shape[0]):
       name = 'pfd_e' + str(i)
-      value = pyeeg.pfd(self.data[i].size, self.fprime['first_order_diff_e' + str(i)])
+      value = pyeeg.pfd(self.data[i], self.fprime['first_order_diff_e' + str(i)])
       self.features[name] = value
+
+  @timed
+  def set_hjorth(self):
+    for i in xrange(self.data.shape[0]):
+      mob_name = 'hjorthmob_e' + str(i)
+      com_name = 'hjorthcom_e' + str(i)
+      mobility_value, complexity_value = pyeeg.hjorth(self.data[i], self.fprime['first_order_diff_e' + str(i)])
+      self.features[mob_name] = mobility_value
+      self.features[com_name] = complexity_value
+    
+  @timed
+  def set_higuchi(self):
+    kmax = 4
+    for i in xrange(self.data.shape[0]):
+      name = 'higuchi_e' + str(i)
+      value = pyeeg.hfd(self.data[i], kmax)
+      self.features[name] = value
+    
 
 @coroutine
 def record_features(fieldnames=[]):
@@ -120,7 +142,8 @@ def record_features(fieldnames=[]):
     f.close()
 
 def get_feature_names(max_e=24):
-  fakedata = np.array([np.array([1,1,1]) for i in range(max_e)])
+  fakedata = np.array([np.array([np.random.random_integers(-2**16, 2**16) for i in range(128)], dtype=np.int64) 
+                            for i in range(max_e)], dtype=np.int64)
   fe = FeatureExtractor(fakedata)
   fe.set_features('fakefile')
   return fe.features.keys()
@@ -129,7 +152,9 @@ def main():
   #Prepare for file I/O
   fh = file_handler.FileHandler()
   fh.set_train_interical_preictal_and_test_files()
-  train_files = np.array([np.array([f]) for f in fh.all_train_files])
+  train_files = fh.seg_train_files['Dog']
+  train_files.extend(fh.seg_train_files['Patient'])
+  train_files = np.array([np.array([f]) for f in train_files])
 
   #Prepare for MPI
   comm = MPI.COMM_WORLD
@@ -150,13 +175,10 @@ def main():
     total_responses = 0
     expected_responses = train_files.size
     for i in xrange(expected_responses):
-      #Calculate the process rank to send the next file to
-      proc = (i % (size - 1)) + 1
-
       #Prepare the data for MPI C type send
       fh.file_in = train_files[i][0]
       fh.set_data()
-      data = np.array([np.array(fh.data[0][j], dtype=np.int32) for j in xrange(fh.data[0].shape[0])], dtype=np.int32)
+      data = np.array([np.array(fh.data[0][j], dtype=np.int64) for j in xrange(fh.data[0].shape[0])], dtype=np.int64)
 
       #Calculate the shape of the data to make the correctly sized buffer in the recieving processes
       data_shape = np.array(data.shape, dtype=np.int32)
@@ -164,19 +186,25 @@ def main():
       #Set the file name to send
       fname = train_files[i]
 
+      #Set proc to idle proc after initializing worker procs
+      if i >= size-1:
+        r = 1
+        while not comm.Iprobe(source = r, tag = 55):
+          time.sleep(1)
+          r = (r % (size - 1)) + 1
+        features = comm.recv(source = r, tag = 55)
+        rf.send(features)
+        total_responses += 1
+        proc = r
+      else:
+        proc = i + 1
+
       #Send data
       comm.Send([stop_iteration, MPI.INT], dest=proc, tag=1)
       comm.Send([data_shape, MPI.INT], dest=proc, tag=2)
       comm.Send([fname, MPI.SIGNED_CHAR], dest=proc, tag=3)
       comm.Send([data, MPI.INT], dest=proc, tag=4)
-      print "Data set number %s sent" % i
-
-      #Probe processes for features and if recieved append features to feature file
-      for r in xrange(1, size):
-        if comm.Iprobe(source=r, tag=55):
-          total_responses += 1
-          features = comm.recv(source=r, tag=55)
-          rf.send(features)
+      print "Sample %s data set number %s sent to process rank %s" % (train_files[i][0], i, proc)
 
     #Cleanly exit execution by sending stop iteration signal to workers and closing feature record generator
     stop_iteration[0] = 1
@@ -201,7 +229,7 @@ def main():
 
       #Recieve data shape and make buffer for data matrix
       comm.Recv([data_shape, MPI.INT], source=0, tag=2)
-      data = np.array([np.zeros(data_shape[1], dtype=np.int32) for i in xrange(data_shape[0])], dtype=np.int32)
+      data = np.array([np.zeros(data_shape[1], dtype=np.int64) for i in xrange(data_shape[0])], dtype=np.int64)
       comm.Recv([fname, MPI.SIGNED_CHAR], source=0, tag=3)
       comm.Recv([data, MPI.INT], source=0, tag=4)
 

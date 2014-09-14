@@ -28,11 +28,8 @@ Functions listed alphabetically
 
 """
 
+import numpy as np
 from numpy.fft import fft
-from numpy import zeros, floor, log10, log, mean, array, sqrt, vstack, cumsum, \
-          ones, log2, std
-from numpy.linalg import svd, lstsq
-import time
 
 ######################## Functions contributed by Xin Liu #################
 
@@ -71,21 +68,21 @@ def hurst(X):
   
   N = len(X)
     
-  T = array([float(i) for i in xrange(1,N+1)])
-  Y = cumsum(X)
+  T = np.array([float(i) for i in xrange(1,N+1)])
+  Y = np.cumsum(X)
   Ave_T = Y/T
   
-  S_T = zeros((N))
-  R_T = zeros((N))
+  S_T = np.zeros((N))
+  R_T = np.zeros((N))
   for i in xrange(N):
-    S_T[i] = std(X[:i+1])
+    S_T[i] = np.std(X[:i+1])
     X_T = Y - T * Ave_T[i]
     R_T[i] = max(X_T[:i + 1]) - min(X_T[:i + 1])
     
   R_S = R_T / S_T
-  R_S = log(R_S)
-  n = log(T).reshape(N, 1)
-  H = lstsq(n[1:], R_S[1:])[0]
+  R_S = np.log(R_S)
+  n = np.log(T).reshape(N, 1)
+  H = np.linalg.lstsq(n[1:], R_S[1:])[0]
   return H[0]
 
 
@@ -165,7 +162,7 @@ def embed_seq(X,Tau,D):
     print "Tau has to be at least 1"
     exit()
 
-  Y=zeros((N - (D - 1) * Tau, D))
+  Y=np.zeros((N - (D - 1) * Tau, D))
   for i in xrange(0, N - (D - 1) * Tau):
     for j in xrange(0, D):
       Y[i][j] = X[i + j * Tau]
@@ -290,11 +287,11 @@ def bin_power(X,Band,Fs):
 
   C = fft(X)
   C = abs(C)
-  Power =zeros(len(Band)-1);
+  Power =np.zeros(len(Band)-1);
   for Freq_Index in xrange(0,len(Band)-1):
     Freq = float(Band[Freq_Index])                    ## Xin Liu
     Next_Freq = float(Band[Freq_Index+1])
-    Power[Freq_Index] = sum(C[floor(Freq/Fs*len(X)):floor(Next_Freq/Fs*len(X))])
+    Power[Freq_Index] = sum(C[np.floor(Freq/Fs*len(X)):np.floor(Next_Freq/Fs*len(X))])
   Power_Ratio = Power/sum(Power)
   return Power, Power_Ratio  
 
@@ -306,14 +303,9 @@ def first_order_diff(X):
     Y = [x(2) - x(1) , x(3) - x(2), ..., x(N) - x(N-1)]
     
   """
-  D=[]
-  
-  for i in xrange(1,len(X)):
-    D.append(X[i]-X[i-1])
+  return np.array([X[i]-X[i-1] for i in xrange(1, X.size)], dtype=np.int64)
 
-  return D
-
-def pfd(X_size, D):
+def pfd(X, D):
   """Compute Petrosian Fractal Dimension of a time series from either two 
   cases below:
     1. X, the time series of type list (default)
@@ -332,29 +324,36 @@ def pfd(X_size, D):
   for i in xrange(1,len(D)):
     if D[i]*D[i-1]<0:
       N_delta += 1
-  n = X_size
-  return log10(n)/(log10(n)+log10(n/n+0.4*N_delta))
+  n = X.size
+  return np.log10(n)/(np.log10(n)+np.log10(n/n+0.4*N_delta))
 
 
 def hfd(X, Kmax):
-  """ Compute Hjorth Fractal Dimension of a time series X, kmax
+  """ Compute Higuchi Fractal Dimension of a time series X, kmax
    is an HFD parameter
+  This function should be refactored to use numpy arrays, not python lists
   """
-  L = [];
-  x = []
-  N = len(X)
+  L = np.array([])
+  x = np.array([])
+  N = X.size
   for k in xrange(1,Kmax):
-    Lk = []
-    for m in xrange(0,k):
+    Lk = np.array([])
+    for m in xrange(k):
       Lmk = 0
-      for i in xrange(1,int(floor((N-m)/k))):
-        Lmk += abs(X[m+i*k] - X[m+i*k-k])
-      Lmk = Lmk*(N - 1)/floor((N - m) / float(k)) / k
-      Lk.append(Lmk)
-    L.append(log(mean(Lk)))
-    x.append([log(float(1) / k), 1])
+      for i in xrange(1,int(np.floor((N-m)/k))):
+        Lmk += np.abs(X[m+i*k] - X[m+i*k-k])
+      Lmk = Lmk*(N - 1)/np.floor((N - m) / float(k)) / k
+      Lk = np.append(Lk, Lmk)
+    L = np.append(L, np.log(np.mean(Lk)))
+    #x.append([np.log(float(1) / k), 1])
+    if x.size == 0:
+      x = np.array([np.log(float(1) / k), 1])
+    elif x.size == 2:
+      x = np.append([x], [[np.log(float(1) / k), 1]], axis = 0)
+    else:
+      x = np.append(x, [[np.log(float(1) / k), 1]], axis = 0)
   
-  (p, r1, r2, s)=lstsq(x, L)
+  (p, r1, r2, s)=np.linalg.lstsq(x, L)
   return p[0]
 
 def hjorth(X, D = None):
@@ -397,19 +396,18 @@ def hjorth(X, D = None):
   if D is None:
     D = first_order_diff(X)
 
-  D.insert(0, X[0]) # pad the first difference
-  D = array(D)
+  D = np.append(np.array(X[0], dtype=np.int32), D) # pad the first difference
 
-  n = len(X)
+  n = X.size
 
-  M2 = float(sum(D ** 2)) / n
-  TP = sum(array(X) ** 2)
-  M4 = 0;
-  for i in xrange(1, len(D)):
+  M2 = float(np.sum(D ** 2)) / n
+  TP = np.sum(X ** 2)
+  M4 = 0.0
+  for i in xrange(1, D.size):
     M4 += (D[i] - D[i - 1]) ** 2
   M4 = M4 / n
   
-  return sqrt(M2 / TP), sqrt(float(M4) * TP / M2 / M2)  # Hjorth Mobility and Complexity
+  return np.sqrt(M2 / TP), np.sqrt(M4 * TP / M2 / M2)  # Hjorth Mobility and Complexity
 
 def spectral_entropy(X, Band, Fs, Power_Ratio = None):
   """Compute spectral entropy of a time series from either two cases below:
@@ -465,8 +463,8 @@ def spectral_entropy(X, Band, Fs, Power_Ratio = None):
 
   Spectral_Entropy = 0
   for i in xrange(0, len(Power_Ratio) - 1):
-    Spectral_Entropy += Power_Ratio[i] * log(Power_Ratio[i])
-  Spectral_Entropy /= log(len(Power_Ratio))  # to save time, minus one is omitted
+    Spectral_Entropy += Power_Ratio[i] * np.log(Power_Ratio[i])
+  Spectral_Entropy /= np.log(len(Power_Ratio))  # to save time, minus one is omitted
   return -1 * Spectral_Entropy
 
 def svd_entropy(X, Tau, DE, W = None):
@@ -498,10 +496,10 @@ def svd_entropy(X, Tau, DE, W = None):
 
   if W is None:
     Y = EmbedSeq(X, tau, dE)
-    W = svd(Y, compute_uv = 0)
+    W = np.linalg.svd(Y, compute_uv = 0)
     W /= sum(W) # normalize singular values
 
-  return -1*sum(W * log(W))
+  return -1*sum(W * np.log(W))
 
 def fisher_info(X, Tau, DE, W = None):
   """ Compute Fisher information of a time series from either two cases below:
@@ -568,7 +566,7 @@ def fisher_info(X, Tau, DE, W = None):
 
   if W is None:
     M = embed_seq(X, Tau, DE)
-    W = svd(M, compute_uv = 0)
+    W = np.linalg.svd(M, compute_uv = 0)
     W /= sum(W)  
   
   FI = 0
@@ -638,7 +636,7 @@ def ap_entropy(X, M, R):
   Em = embed_seq(X, 1, M)  
   Emp = embed_seq(X, 1, M + 1) #  try to only build Emp to save time
 
-  Cm, Cmp = zeros(N - M + 1), zeros(N - M)
+  Cm, Cmp = np.zeros(N - M + 1), np.zeros(N - M)
   # in case there is 0 after counting. Log(0) is undefined.
 
   for i in xrange(0, N - M):
@@ -665,7 +663,7 @@ def ap_entropy(X, M, R):
   Cm /= (N - M +1 )
   Cmp /= ( N - M )
 #  import code;code.interact(local=locals())
-  Phi_m, Phi_mp = sum(log(Cm)),  sum(log(Cmp))
+  Phi_m, Phi_mp = sum(np.log(Cm)),  sum(np.log(Cmp))
 
   Ap_En = (Phi_m - Phi_mp) / (N - M)
 
@@ -723,7 +721,7 @@ def samp_entropy(X, M, R):
   Em = embed_seq(X, 1, M)  
   Emp = embed_seq(X, 1, M + 1)
 
-  Cm, Cmp = zeros(N - M - 1) + 1e-100, zeros(N - M - 1) + 1e-100
+  Cm, Cmp = np.zeros(N - M - 1) + 1e-100, np.zeros(N - M - 1) + 1e-100
   # in case there is 0 after counting. Log(0) is undefined.
 
   for i in xrange(0, N - M):
@@ -735,7 +733,7 @@ def samp_entropy(X, M, R):
         if abs(Emp[i][-1] - Emp[j][-1]) <= R: # check last one
           Cmp[i] += 1
 
-  Samp_En = log(sum(Cm)/sum(Cmp))
+  Samp_En = np.log(sum(Cm)/sum(Cmp))
 
   return Samp_En
 
@@ -827,18 +825,18 @@ def dfa(X, Ave = None, L = None):
 
   """
 
-  X = array(X)
+  X = np.array(X)
 
   if Ave is None:
-    Ave = mean(X)
+    Ave = np.mean(X)
 
-  Y = cumsum(X)
+  Y = np.cumsum(X)
   Y -= Ave
 
   if L is None:
-    L = floor(len(X)*1/(2**array(range(4,int(log2(len(X)))-4))))
+    L = np.floor(len(X)*1/(2**np.array(range(4,int(np.log2(len(X)))-4))))
 
-  F = zeros(len(L)) # F(n) of different given box length n
+  F = np.zeros(len(L)) # F(n) of different given box length n
 
   for i in xrange(0,len(L)):
     n = int(L[i])            # for each box length L[i]
@@ -849,12 +847,12 @@ def dfa(X, Ave = None, L = None):
     for j in xrange(0,len(X),n): # for each box
       if j+n < len(X):
         c = range(j,j+n)
-        c = vstack([c, ones(n)]).T # coordinates of time in the box
+        c = np.vstack([c, np.ones(n)]).T # coordinates of time in the box
         y = Y[j:j+n]        # the value of data in the box
-        F[i] += lstsq(c,y)[1]  # add residue in this box
+        F[i] += np.linalg.lstsq(c,y)[1]  # add residue in this box
     F[i] /= ((len(X)/n)*n)
-  F = sqrt(F)
+  F = np.sqrt(F)
   
-  Alpha = lstsq(vstack([log(L), ones(len(L))]).T,log(F))[0][0]
+  Alpha = np.linalg.lstsq(np.vstack([np.log(L), np.ones(len(L))]).T,np.log(F))[0][0]
   
   return Alpha
