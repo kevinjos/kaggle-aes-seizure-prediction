@@ -2,4 +2,3 @@ data/
 feature/
 *.pyc
 *.swp
-*.csv
