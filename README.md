@@ -7,6 +7,10 @@ Research clinician observations of epileptic patients
 Data Exploration
 ================
 
+Sampleing Frequency:  
+  * Dogs 400Hz  
+  * Humans 5000Hz  
+
 Noise reduction:
 
   * 60hz filter appears to be unnessary after watching a number of data files FFT plots (explore.py)

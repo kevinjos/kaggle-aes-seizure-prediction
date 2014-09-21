@@ -5,6 +5,7 @@ import pyeeg
 import file_handler
 import csv
 import time
+import mne
 from decs import coroutine, timed
 from mpi4py import MPI
 
@@ -25,9 +26,12 @@ class FeatureExtractor(object):
     self.features = {}
     self.fprime = {}
     self.data = data
+    self.frequency = None
 
   def set_features(self,filen):
     self.set_filen(filen)
+    self.set_frequency()
+    self.apply_filters()
     self.set_firstval()
     self.set_lastval()
     self.set_maxval()
@@ -42,6 +46,18 @@ class FeatureExtractor(object):
 
   def set_filen(self, filen):
       self.features['filen'] = filen.split('.')[0]
+
+  def set_frequency(self):
+    if self.features['filen'].find('Dog') > -1:
+      self.frequency = 400.0
+    elif self.features['filen'].find('Patient'):
+      self.frequency = 5000.0
+  
+  def apply_filters(self):
+    for i in xrange(self.data.shape[0]):
+      self.data[i] = mne.filter.band_pass_filter(
+                          self.data[i], self.frequency,
+                          1.0, 59.0, copy=True, n_jobs='cuda')
 
   def set_firstval(self):
     for i in xrange(self.data.shape[0]):
@@ -142,8 +158,8 @@ def record_features(fieldnames=[]):
     f.close()
 
 def get_feature_names(max_e=24):
-  fakedata = np.array([np.array([np.random.random_integers(-2**16, 2**16) for i in range(128)], dtype=np.int64) 
-                            for i in range(max_e)], dtype=np.int64)
+  fakedata = np.array([np.array([np.random.random_integers(-2**16, 2**16) for i in range(1024)], dtype=np.float64) 
+                            for i in range(max_e)], dtype=np.float64)
   fe = FeatureExtractor(fakedata)
   fe.set_features('fakefile')
   return fe.features.keys()
@@ -178,7 +194,7 @@ def main():
       #Prepare the data for MPI C type send
       fh.file_in = train_files[i][0]
       fh.set_data()
-      data = np.array([np.array(fh.data[0][j], dtype=np.int64) for j in xrange(fh.data[0].shape[0])], dtype=np.int64)
+      data = np.array([np.array(fh.data[0][j], dtype=np.float64) for j in xrange(fh.data[0].shape[0])], dtype=np.float64)
 
       #Calculate the shape of the data to make the correctly sized buffer in the recieving processes
       data_shape = np.array(data.shape, dtype=np.int32)
@@ -203,7 +219,7 @@ def main():
       comm.Send([stop_iteration, MPI.INT], dest=proc, tag=1)
       comm.Send([data_shape, MPI.INT], dest=proc, tag=2)
       comm.Send([fname, MPI.SIGNED_CHAR], dest=proc, tag=3)
-      comm.Send([data, MPI.INT], dest=proc, tag=4)
+      comm.Send([data, MPI.FLOAT], dest=proc, tag=4)
       print "Sample %s data set number %s sent to process rank %s" % (train_files[i][0], i, proc)
 
     #Cleanly exit execution by sending stop iteration signal to workers and closing feature record generator
@@ -229,9 +245,9 @@ def main():
 
       #Recieve data shape and make buffer for data matrix
       comm.Recv([data_shape, MPI.INT], source=0, tag=2)
-      data = np.array([np.zeros(data_shape[1], dtype=np.int64) for i in xrange(data_shape[0])], dtype=np.int64)
+      data = np.array([np.zeros(data_shape[1], dtype=np.float64) for i in xrange(data_shape[0])], dtype=np.float64)
       comm.Recv([fname, MPI.SIGNED_CHAR], source=0, tag=3)
-      comm.Recv([data, MPI.INT], source=0, tag=4)
+      comm.Recv([data, MPI.FLOAT], source=0, tag=4)
 
       #Make and send feature set
       fe = FeatureExtractor(data)

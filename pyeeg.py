@@ -305,7 +305,7 @@ def first_order_diff(X):
   """
   return np.array([X[i]-X[i-1] for i in xrange(1, X.size)], dtype=np.int64)
 
-def pfd(X, D):
+def pfd(X, D=None):
   """Compute Petrosian Fractal Dimension of a time series from either two 
   cases below:
     1. X, the time series of type list (default)

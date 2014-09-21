@@ -38,9 +38,6 @@ class FileHandler(object):
   def append_file_name(self):
     self.data[3] = np.append(self.data[3], self.file_in.split("/")[1])
 
-  def learn_our_data(self):
-    pass
-
   def set_train_interical_preictal_and_test_files(self):
     '''
     self.segmented_train_files is a dictionary with two keys, interictal and preictal

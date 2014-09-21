@@ -19,6 +19,9 @@ from PyQt4 import QtGui, QtCore
 import pyqtgraph as pg
 import file_handler
 import objgraph
+import mne
+
+mne.set_log_level('DEBUG')
 
 class Cine(object):
   def __init__(self):
@@ -40,9 +43,9 @@ class Cine(object):
     for i in range(num_channels):
       i = str(i)
       setattr(self, 'rawplot_' + i, pg.PlotWidget())
-      getattr(self, 'rawplot_' + i).setRange(yRange=(1000, -1000))
+      getattr(self, 'rawplot_' + i).setRange(yRange=(400, -400))
       setattr(self, 'fftplot_' + i, pg.PlotWidget())
-      getattr(self, 'fftplot_' + i).setRange(yRange=(0, 170))
+      getattr(self, 'fftplot_' + i).setRange(yRange=(0, 100))
       self.layout.addWidget(getattr(self, 'rawplot_' + i))
       self.layout.addWidget(getattr(self, 'fftplot_' + i))
 
@@ -63,6 +66,11 @@ class Cine(object):
 
   def make_iterators(self, num_channels):
     for i in range(num_channels):
+      self.filehandler.data[0][i] = mne.filter.band_pass_filter(
+                           np.float64(self.filehandler.data[0][i]), 
+                           np.float64(self.filehandler.frequency[0]),
+                           1.0, 59.0, copy=True, verbose='DEBUG',
+                           n_jobs='cuda')
       setattr(self, 'rawchan_' + str(i), self.filehandler.data[0][i].flat)
       
   def do_fft(self, inputa):
@@ -75,21 +83,20 @@ class Cine(object):
     #initialize parameters, graphs, and collections for plotting
     self.cons_plots(num_channels)
 
-    self.fft_size, fft_stop = 5000, 10000
-    fft_start = fft_stop - self.fft_size
-
+    self.fft_size = int(self.filehandler.frequency[0])
+    time_scale = self.fft_size * 1
     bins = [i for i in xrange(self.fft_size/2)]
-    x_time = deque([0], fft_stop)
-    y_val = [deque([0], fft_stop) for i in range(num_channels)]
+    x_time = deque([0], time_scale)
+    y_val = [deque([0], time_scale) for i in range(num_channels)]
     #iterate over the data and make plots
     for time_s in xrange(num_samples):
       x_time.append(time_s)
       for i in range(num_channels):
         y_val[i].append(getattr(self, 'rawchan_' + str(i)).next())
-      if time_s % 5000 == 0 and len(y_val[0]) >= fft_stop:
+      if time_s % 5000 == 0 and len(x_time) == 5000:
         for i in range(num_channels):
-          outputa = self.do_fft(np.array(list(islice(y_val[i], fft_start, fft_stop)), dtype=complex))
-          getattr(self, 'fftplot_' + str(i)).plot(bins[:200], outputa[0:200], clear=True)
+          outputa = self.do_fft(np.array(y_val[i], dtype=complex))
+          getattr(self, 'fftplot_' + str(i)).plot(bins[:60], outputa[0:60], clear=True)
           getattr(self, 'rawplot_' + str(i)).plot([x/5000.0 for x in x_time], y_val[i], clear=True)
         self.app.processEvents()
 
