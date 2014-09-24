@@ -50,8 +50,11 @@ class FeatureExtractor(object):
   def set_frequency(self):
     if self.features['filen'].find('Dog') > -1:
       self.frequency = 400.0
-    elif self.features['filen'].find('Patient'):
+    elif self.features['filen'].find('Patient') > -1:
       self.frequency = 5000.0
+    else:
+      print "Oops, cannot find the correct frequencey for %s" % self.features['filen']
+      self.frequency = 1024.0
   
   def apply_filters(self):
     for i in xrange(self.data.shape[0]):
@@ -148,7 +151,7 @@ class FeatureExtractor(object):
 def record_features(fieldnames=[]):
   feature_file = '/home/kjs/repos/kaggle-aes-seizure-prediction/train_features.csv'
   try:
-    f = open(feature_file, 'w')
+    f = open(feature_file, 'a')
     writer = csv.DictWriter(f, fieldnames)
     writer.writeheader()
     while True:
@@ -168,8 +171,9 @@ def main():
   #Prepare for file I/O
   fh = file_handler.FileHandler()
   fh.set_train_interical_preictal_and_test_files()
-  train_files = fh.seg_train_files['Dog']
-  train_files.extend(fh.seg_train_files['Patient'])
+  #train_files = fh.seg_train_files['Dog']
+  #train_files.extend(fh.seg_train_files['Patient'])
+  train_files = fh.seg_train_files['Patient']
   train_files = np.array([np.array([f]) for f in train_files])
 
   #Prepare for MPI

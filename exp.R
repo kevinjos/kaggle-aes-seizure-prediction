@@ -1,11 +1,17 @@
 #!/usr/bin/env Rscript
 
 library(RRF)
+library(ggplot2)
+library(MASS)
+library(arm)
 
-data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/train_features.csv')
+data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/../train_features.csv')
+data <- data[1:3938, ]
 
 data$target <- 0
 data[grep('preictal', data$filen), 'target'] <- 1
+data$target <- as.factor(data$target)
+data <- data[, !(colnames(data) %in% grep('samplesize', colnames(data), value=TRUE))]
 
 data.dog <- data[grep('Dog', data$filen), ]
 all.null.dog <- grep('*[a-z]_e(1[6-9]|2[0-9])', colnames(data.dog))
@@ -23,60 +29,94 @@ for (col in e15) {
   data.dog[is.na(data.dog[col]), col] <- mean(data.dog[[col]], na.rm=TRUE)
 }
 
-#Experiment in cross validation... need to extract target from sample groups
-X <- data.dog
-id <- sample(1:5, nrow(X), replace=TRUE)
-ListX <- split(X, id)
+#Generate summary features across electrodes
+data.dog$higuchi_mean <- apply(data.dog[, grep('higuchi', colnames(data.dog))], 1, mean)
+data.dog$hjorthmob_mean <- apply(data.dog[, grep('hjorthmob', colnames(data.dog))], 1, mean)
+data.dog$hjorthcom_mean <- apply(data.dog[, grep('hjorthcom', colnames(data.dog))], 1, mean)
+data.dog$pfd_mean <- apply(data.dog[, grep('pfd', colnames(data.dog))], 1, mean)
+data.dog$mean_mean <- apply(data.dog[, grep('mean', colnames(data.dog))], 1, mean)
 
+data.dog$higuchi_sd <- apply(data.dog[, grep('higuchi', colnames(data.dog))], 1, sd)
+data.dog$hjorthmob_sd <- apply(data.dog[, grep('hjorthmob', colnames(data.dog))], 1, sd)
+data.dog$hjorthcom_sd <- apply(data.dog[, grep('hjorthcom', colnames(data.dog))], 1, sd)
+data.dog$pfd_sd <- apply(data.dog[, grep('pfd', colnames(data.dog))], 1, sd)
+data.dog$mean_sd <- apply(data.dog[, grep('mean', colnames(data.dog))], 1, sd)
+
+data.dog$higuchi_range <- apply(data.dog[, grep('higuchi', colnames(data.dog))], 1, 
+          function(x) max(x) - min(x))
+data.dog$hjorthmob_range <- apply(data.dog[, grep('hjorthmob', colnames(data.dog))], 1, 
+          function(x) max(x) - min(x))
+data.dog$hjorthcom_range <- apply(data.dog[, grep('hjorthcom', colnames(data.dog))], 1,
+          function(x) max(x) - min(x))
+data.dog$pfd_range <- apply(data.dog[, grep('pfd', colnames(data.dog))], 1, 
+          function(x) max(x) - min(x))
+data.dog$mean_range <- apply(data.dog[, grep('mean', colnames(data.dog))], 1, 
+          function(x) max(x) - min(x))
+
+#set aside a validation set from the training set.. should implement ~10-fold cross validation at some point
 train <- sample(1:nrow(data.dog), .9*nrow(data.dog))
 dog.train <- data.dog[train, ]
 dog.validate <- data.dog[-train, ]
 
-dog.train.means <- data.frame(
-higuchi = apply(dog.train[, grep('higuchi', colnames(dog.train))], 1, mean),
-hjorthmob= apply(dog.train[, grep('hjorthmob', colnames(dog.train))], 1,mean),
-hjorthcom= apply(dog.train[, grep('hjorthcom', colnames(dog.train))], 1,mean),
-pfd = apply(dog.train[, grep('pfd', colnames(dog.train))], 1, mean),
-mean = apply(dog.train[, grep('mean', colnames(dog.train))], 1, mean))
 
+#RRF func wants target out of the feature set
 target <- as.factor(dog.train$target)
 dog.train$target <- NULL
 
-rf <- RRF(dog.train, target, flagReg = 0)
+
+Validate <- function(model, validation.set) {
+  Predictions <- predict(model, validation.set[, !(colnames(validation.set) %in% c("target"))])
+  Actual <- validation.set$target
+  cm <- table(Actual, Predictions)
+  accuracy <- (cm[1] + cm[4])/(cm[1]+cm[2]+cm[3]+cm[4])
+  recall <- cm[4]/(cm[3]+cm[4])
+  precision <- cm[4]/(cm[2]+cm[4])
+  fscore <- (2 * recall * precision) / (recall + precision)
+  acc <- data.frame(tp=cm[4], fp=cm[2], tn=cm[1], fn=cm[3], 
+                    accuracy=accuracy, fscore=fscore, recall=recall, precision=precision,
+                    features=length(model$feaSet))
+  return(acc)
+}
+
+if (FALSE) {
+rf <- RRF(x=dog.train, y=target, ntree=501, maxnodes=101, importance=TRUE, do.trace=10, 
+          coefReg=1, flagReg=1)
 impRF <- rf$importance
 impRF <- impRF[, "MeanDecreaseGini"]
 impRF[order(impRF)]
-
-rrf <- RRF(dog.train, target, flagReg=1)
-
 imp <- impRF/(max(impRF))
 
-TT <- function(actual, predicted) {
-  tt <- data.frame(actual=actual, predicted=predicted)
-  TP <- dim(tt[which(tt$actual == 1 & tt$predicted == 1), ])[1]
-  TN <- dim(tt[which(tt$actual == 0 & tt$predicted == 0), ])[1]
-  FP <- dim(tt[which(tt$actual == 0 & tt$predicted == 1), ])[1]
-  FN <- dim(tt[which(tt$actual == 1 & tt$predicted == 0), ])[1]
-  print(paste("TP=", TP, "FP=", FP, "TN=", TN, "FN=", FN))
-}
-
-models <- vector("list", 8)
-for (gamma in seq(.05, .4, .05)) {
+models <- vector("list")
+for (gamma in seq(.2, .95, .05)) {
   coefReg <- (1-gamma)+gamma*imp
-  grf <- RRF(dog.train, target, coefReg=coefReg, flagReg=0)
-  models[[paste(gamma)]] <- grf
+  grf <- RRF(x=dog.train, y=target, ntree=501, maxnodes=101, importance=TRUE, do.trace=10, 
+             coefReg=coefReg, flagReg=1)
+  models[[paste(gamma)]] <- c(grf, Validate(grf, dog.validate))
   print(paste("For gamma of",gamma,"and feature size of",length(grf$feaSet)))
-  TT(target, grf$predicted)
+}
 }
 
-glm <- glm(target ~ dog.train$higuchi_e12 + dog.train$meanval_e8 + 
-                    dog.train$meanval_e3 + dog.train$hjorthmob_e2 +
-                    dog.train$higuchi_e5 + dog.train$higuchi_e3 +
-                    dog.train$hjorthcom_e14, family = binomial)
+#Messing with logistic regression
+formula <- "target ~ higuchi_e1 + pfd_e0 + hjorthcom_e14 + pfd_e7 + hjorthmob_e10 + hjorthmob_e14 +
+                    maxval_e7 + meanval_e1 + hjorthcom_e0 + hjorthcom_e3 + hjorthcom_e5 + higuchi_e14 + 
+                    higuchi_e12 + minval_e4 + pfd_e12 + pfd_e14 + minval_e12 + higuchi_sd + hjorthcom_sd + pfd_sd"
+glm <- glm(formula = formula, family="binomial", data=dog.train)
+glm.aic <- stepAIC(glm)
+glm.bayes <- bayesglm(formula=formula, family="binomial", data=dog.train)
+Y <- dog.train$target
+X <- as.matrix(dog.train[, !(colnames(dog.train) %in% 'target')])
+glm.reg <- glmnet(x=X, y=Y, family="binomial")
 
-glm.means <- glm(target ~ dog.train.means$higuchi +
-                          dog.train.means$hjorthmob +
-                          dog.train.means$hjorthcom +
-                          dog.train.means$pfd +
-                          dog.train.means$mean, family = binomial)
+Y_VAL <- factor(dog.validate$target)
+X_VAL <- as.matrix(dog.validate[, !(colnames(dog.validate) %in% 'target')])
+
+
+dog.train$predict <- predict(glm.aic, type="response")
+plot <- ggplot(dog.train, aes(x=1:nrow(dog.train), y=predict, color=target)) + geom_jitter(stat='identity')
+
+dog.validate$predict <- predict(glm.reg, newx=X_VAL, type="response")
+plot <- ggplot(dog.validate, aes(x=1:nrow(dog.validate), y=predict, color=target)) + geom_jitter(stat='identity')
+
+
+
 
