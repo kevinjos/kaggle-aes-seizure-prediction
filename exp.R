@@ -5,8 +5,7 @@ library(ggplot2)
 library(MASS)
 library(arm)
 
-data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/../train_features.csv')
-data <- data[1:3938, ]
+data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/dog_features.csv')
 
 data$target <- 0
 data[grep('preictal', data$filen), 'target'] <- 1
@@ -107,16 +106,18 @@ Y <- dog.train$target
 X <- as.matrix(dog.train[, !(colnames(dog.train) %in% 'target')])
 glm.reg <- glmnet(x=X, y=Y, family="binomial")
 
+if (FALSE) {
 Y_VAL <- factor(dog.validate$target)
 X_VAL <- as.matrix(dog.validate[, !(colnames(dog.validate) %in% 'target')])
 
 
 dog.train$predict <- predict(glm.aic, type="response")
-plot <- ggplot(dog.train, aes(x=1:nrow(dog.train), y=predict, color=target)) + geom_jitter(stat='identity')
+plot <- ggplot(dog.train, aes(x=1:nrow(dog.train), y=predict, color=target)) + geom_point(stat='identity')
 
-dog.validate$predict <- predict(glm.reg, newx=X_VAL, type="response")
-plot <- ggplot(dog.validate, aes(x=1:nrow(dog.validate), y=predict, color=target)) + geom_jitter(stat='identity')
-
+p <- predice(glm.reg, newx=X_VAL, type="response")
+dog.validate$predict <- p[,50]
+plot <- ggplot(dog.validate, aes(x=1:nrow(dog.validate), y=predict, color=target)) + geom_point(stat='identity')
+}
 
 
 

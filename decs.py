@@ -8,7 +8,7 @@ def timed(f):
     start = time()
     result = f(*args, **kwds)
     elapsed = time() - start
-    print "%s took %d time to finish" % (f.__name__, elapsed)
+    print "%s took %3.13f time to finish" % (f.__name__, elapsed)
     return result
   return wrapper
 
