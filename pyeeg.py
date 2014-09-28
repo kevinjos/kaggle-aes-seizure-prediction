@@ -291,7 +291,7 @@ def bin_power(X,Band,Fs):
   for Freq_Index in xrange(0,len(Band)-1):
     Freq = float(Band[Freq_Index])                    ## Xin Liu
     Next_Freq = float(Band[Freq_Index+1])
-    Power[Freq_Index] = sum(C[np.floor(Freq/Fs*len(X)):np.floor(Next_Freq/Fs*len(X))])
+    Power[Freq_Index] = sum(C[int(np.floor(Freq/Fs*len(X))):int(np.floor(Next_Freq/Fs*len(X)))])
   Power_Ratio = Power/sum(Power)
   return Power, Power_Ratio  
 
@@ -467,7 +467,7 @@ def spectral_entropy(X, Band, Fs, Power_Ratio = None):
   Spectral_Entropy /= np.log(len(Power_Ratio))  # to save time, minus one is omitted
   return -1 * Spectral_Entropy
 
-def svd_entropy(X, Tau, DE, W = None):
+def svd_entropy(X = None, Tau = None, DE = None, W = None):
   """Compute SVD Entropy from either two cases below:
   1. a time series X, with lag tau and embedding dimension dE (default)
   2. a list, W, of normalized singular values of a matrix (if W is provided,
@@ -501,7 +501,7 @@ def svd_entropy(X, Tau, DE, W = None):
 
   return -1*sum(W * np.log(W))
 
-def fisher_info(X, Tau, DE, W = None):
+def fisher_info(X = None, Tau = None, DE = None, W = None):
   """ Compute Fisher information of a time series from either two cases below:
   1. X, a time series, with lag Tau and embedding dimension DE (default)
   2. W, a list of normalized singular values, i.e., singular spectrum (if W is

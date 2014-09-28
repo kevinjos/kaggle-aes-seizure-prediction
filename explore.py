@@ -43,9 +43,9 @@ class Cine(object):
     for i in range(num_channels):
       i = str(i)
       setattr(self, 'rawplot_' + i, pg.PlotWidget())
-      getattr(self, 'rawplot_' + i).setRange(yRange=(400, -400))
+      getattr(self, 'rawplot_' + i).setRange(yRange=(200, -200))
       setattr(self, 'fftplot_' + i, pg.PlotWidget())
-      getattr(self, 'fftplot_' + i).setRange(yRange=(0, 100))
+      getattr(self, 'fftplot_' + i).setRange(yRange=(0, 120))
       self.layout.addWidget(getattr(self, 'rawplot_' + i))
       self.layout.addWidget(getattr(self, 'fftplot_' + i))
 
@@ -65,12 +65,20 @@ class Cine(object):
     self.y_val.clear()
 
   def make_iterators(self, num_channels):
+    Fs = self.filehandler.frequency[0]
+    Nf = int(Fs/2)
+    lr = np.array([(x*60)-2 for x in range(1, Nf/60+1)], dtype=np.float64)
+    hr = np.array([(x*60)+2 for x in range(1, Nf/60+1)], dtype=np.float64)
     for i in range(num_channels):
-      self.filehandler.data[0][i] = mne.filter.band_pass_filter(
-                           np.float64(self.filehandler.data[0][i]), 
-                           np.float64(self.filehandler.frequency[0]),
-                           1.0, 59.0, copy=True, verbose='DEBUG',
-                           n_jobs='cuda')
+      self.filehandler.data[0][i] = mne.filter.band_stop_filter(
+                           x = np.float64(self.filehandler.data[0][i]), 
+                           Fs = np.float64(Fs), Fp1 = lr, Fp2 = hr, 
+                           copy=True, verbose='DEBUG', n_jobs='cuda')
+      self.filehandler.data[0][i] = mne.filter.high_pass_filter(
+                           x = np.float64(self.filehandler.data[0][i]), 
+                           Fs = np.float64(Fs), Fp = 0.4, trans_bandwidth = 0.05,
+                           filter_length=int(np.floor(Fs*32)),
+                           copy=True, verbose='DEBUG', n_jobs='cuda')
       setattr(self, 'rawchan_' + str(i), self.filehandler.data[0][i].flat)
       
   def do_fft(self, inputa):
@@ -93,10 +101,10 @@ class Cine(object):
       x_time.append(time_s)
       for i in range(num_channels):
         y_val[i].append(getattr(self, 'rawchan_' + str(i)).next())
-      if time_s % 5000 == 0 and len(x_time) == 5000:
+      if time_s % self.fft_size == 0 and len(x_time) == self.fft_size:
         for i in range(num_channels):
           outputa = self.do_fft(np.array(y_val[i], dtype=complex))
-          getattr(self, 'fftplot_' + str(i)).plot(bins[:60], outputa[0:60], clear=True)
+          getattr(self, 'fftplot_' + str(i)).plot(bins[:500], outputa[:500], clear=True)
           getattr(self, 'rawplot_' + str(i)).plot([x/5000.0 for x in x_time], y_val[i], clear=True)
         self.app.processEvents()
 

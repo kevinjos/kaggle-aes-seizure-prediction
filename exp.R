@@ -4,6 +4,7 @@ library(RRF)
 library(ggplot2)
 library(MASS)
 library(arm)
+library(glmnet)
 
 data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/dog_features.csv')
 
