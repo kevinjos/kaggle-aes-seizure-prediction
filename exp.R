@@ -6,63 +6,103 @@ library(MASS)
 library(arm)
 library(glmnet)
 
-data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/dog_features.csv')
+#Read in data and make train and test sets
+data <- read.csv('/home/kjs/repos/kaggle-aes-seizure-prediction/data/features.csv',
+                stringsAsFactors=FALSE)
+dtest <- data[grep('test', data$filen), ]
+dtrain <- data[-grep('test', data$filen), ]
 
-data$target <- 0
-data[grep('preictal', data$filen), 'target'] <- 1
-data$target <- as.factor(data$target)
-data <- data[, !(colnames(data) %in% grep('samplesize', colnames(data), value=TRUE))]
+dtrain$target <- 0
+dtrain[grep('preictal', dtrain$filen), 'target'] <- 1
 
-data.dog <- data[grep('Dog', data$filen), ]
-all.null.dog <- grep('*[a-z]_e(1[6-9]|2[0-9])', colnames(data.dog))
-data.dog <- data.dog[, -all.null.dog]
-data.dog$filen <- NULL
+dtrain.dog <- dtrain[grep('Dog', dtrain$filen), ]
+dtrain.dog.filen <- dtrain.dog$filen
+dtrain.dog$filen <- NULL
+dtrain.dog <- data.frame(apply(dtrain.dog, 2, as.numeric))
 
-data.human <- data[grep('Patient', data$filen), ]
+dtrain.pat <- dtrain[grep('Patient', dtrain$filen), ]
+dtrain.pat.filen <- dtrain.pat$filen
+dtrain.pat$filen <- NULL
+dtrain.pat <- data.frame(apply(dtrain.pat, 2, as.numeric))
 
-set.seed(629)
+dtrain.filen <- dtrain$filen
+dtrain$filen <- NULL
+dtrain <- data.frame(apply(dtrain, 2, as.numeric))
 
-#How does na.action work? Not on predictors?
-#One dog does not have data for e15... how to handle???
-e15 <- grep('*[a-z]_e15', colnames(data.dog), value=T)
-for (col in e15) {
-  data.dog[is.na(data.dog[col]), col] <- mean(data.dog[[col]], na.rm=TRUE)
+dtest.dog <- dtest[grep('Dog', dtest$filen), ]
+dtest.dog.filen <- dtest.dog$filen
+dtest.dog$filen <- NULL
+dtest.dog <- data.frame(apply(dtest.dog, 2, as.numeric))
+
+dtest.pat <- dtest[grep('Patient', dtest$filen), ]
+dtest.pat.filen <- dtest.pat$filen
+dtest.pat$filen <- NULL
+dtest.pat <- data.frame(apply(dtest.pat, 2, as.numeric))
+
+dtest.filen <- dtest$filen
+dtest$filen <- NULL
+dtest <- data.frame(apply(dtest, 2, as.numeric))
+
+Range <- function(x) {return(max(x, na.rm=TRUE) - min(x, na.rm=TRUE))}
+Mean <- function(x) {return(mean(x, na.rm=TRUE))}
+SD <- function(x) {return(sd(x, na.rm=TRUE))}
+
+FixUpData <- function(dtrain){
+#Generate summary features across electrodes
+#Mean
+dtrain[, 'svd_entropy_mean'] <- apply(dtrain[, grep('svd_entropy', colnames(dtrain))], 1, Mean)
+dtrain[, 'fisher_mean'] <- apply(dtrain[, grep('fisher', colnames(dtrain))], 1, Mean)
+dtrain[, 'dfa_mean'] <- apply(dtrain[, grep('dfa', colnames(dtrain))], 1, Mean)
+dtrain[, 'spectral_entropy_mean'] <- apply(dtrain[, grep('spectral_entropy', 
+                                          colnames(dtrain))], 1, Mean)
+dtrain[, 'higuchi_mean'] <- apply(dtrain[, grep('higuchi', colnames(dtrain))], 1, Mean)
+dtrain[, 'hjorthmob_mean'] <- apply(dtrain[, grep('hjorthmob', colnames(dtrain))], 1, Mean)
+dtrain[, 'hjorthcom_mean'] <- apply(dtrain[, grep('hjorthcom', colnames(dtrain))], 1, Mean)
+dtrain[, 'pfd_mean'] <- apply(dtrain[, grep('pfd', colnames(dtrain))], 1, Mean)
+dtrain[, 'mean_mean'] <- apply(dtrain[, grep('mean', colnames(dtrain))], 1, Mean)
+#Standard deviation
+dtrain[, 'svd_entropy_sd'] <- apply(dtrain[, grep('svd_entropy', colnames(dtrain))], 1, SD)
+dtrain[, 'fisher_sd'] <- apply(dtrain[, grep('fisher', colnames(dtrain))], 1, SD)
+dtrain[, 'dfa_sd'] <- apply(dtrain[, grep('dfa', colnames(dtrain))], 1, SD)
+dtrain[, 'spectral_entropy_sd'] <- apply(dtrain[, grep('spectral_entropy', 
+                                          colnames(dtrain))], 1, SD)
+dtrain[, 'higuchi_sd'] <- apply(dtrain[, grep('higuchi', colnames(dtrain))], 1, SD)
+dtrain[, 'hjorthmob_sd'] <- apply(dtrain[, grep('hjorthmob', colnames(dtrain))], 1, SD)
+dtrain[, 'hjorthcom_sd'] <- apply(dtrain[, grep('hjorthcom', colnames(dtrain))], 1, SD)
+dtrain[, 'pfd_sd'] <- apply(dtrain[, grep('pfd', colnames(dtrain))], 1, SD)
+dtrain[, 'mean_sd'] <- apply(dtrain[, grep('mean', colnames(dtrain))], 1, SD)
+#Range
+dtrain[, 'svd_entropy_range'] <- apply(dtrain[, grep('svd_entropy', colnames(dtrain))], 1, 
+          Range)
+dtrain[, 'fisher_range'] <- apply(dtrain[, grep('fisher', colnames(dtrain))], 1, Range)
+dtrain[, 'dfa_range'] <- apply(dtrain[, grep('dfa', colnames(dtrain))], 1, Range)
+dtrain[, 'spectral_entropy_range'] <- apply(dtrain[, grep('spectral_entropy', 
+                                          colnames(dtrain))], 1, Range)
+dtrain[, 'higuchi_range'] <- apply(dtrain[, grep('higuchi', colnames(dtrain))], 1, Range)
+dtrain[, 'hjorthmob_range'] <- apply(dtrain[, grep('hjorthmob', colnames(dtrain))], 1, Range)
+dtrain[, 'hjorthcom_range'] <- apply(dtrain[, grep('hjorthcom', colnames(dtrain))], 1, Range)
+dtrain[, 'pfd_range'] <- apply(dtrain[, grep('pfd', colnames(dtrain))], 1, Range)
+dtrain[, 'mean_range'] <- apply(dtrain[, grep('mean', colnames(dtrain))], 1, Range)
+
+#Apply mean val of inter-sample feature across electrods to electrodes not present in sample
+NAToMean <- function(x, cnames) {
+  cnames <- cnames[which(is.na(x))]
+  for (cname in cnames) {
+    x[cname] <- mean(as.numeric(x[grep(paste0(strsplit(cname, "_")[[1]][1], "_e"), cnames)]), 
+                     na.rm=TRUE)
+  }
+  return(x)
+}
+dtrain <- data.frame(t(apply(dtrain, 1, function(x) NAToMean(x, colnames(dtrain)))))
+return(dtrain)
 }
 
-#Generate summary features across electrodes
-data.dog$higuchi_mean <- apply(data.dog[, grep('higuchi', colnames(data.dog))], 1, mean)
-data.dog$hjorthmob_mean <- apply(data.dog[, grep('hjorthmob', colnames(data.dog))], 1, mean)
-data.dog$hjorthcom_mean <- apply(data.dog[, grep('hjorthcom', colnames(data.dog))], 1, mean)
-data.dog$pfd_mean <- apply(data.dog[, grep('pfd', colnames(data.dog))], 1, mean)
-data.dog$mean_mean <- apply(data.dog[, grep('mean', colnames(data.dog))], 1, mean)
-
-data.dog$higuchi_sd <- apply(data.dog[, grep('higuchi', colnames(data.dog))], 1, sd)
-data.dog$hjorthmob_sd <- apply(data.dog[, grep('hjorthmob', colnames(data.dog))], 1, sd)
-data.dog$hjorthcom_sd <- apply(data.dog[, grep('hjorthcom', colnames(data.dog))], 1, sd)
-data.dog$pfd_sd <- apply(data.dog[, grep('pfd', colnames(data.dog))], 1, sd)
-data.dog$mean_sd <- apply(data.dog[, grep('mean', colnames(data.dog))], 1, sd)
-
-data.dog$higuchi_range <- apply(data.dog[, grep('higuchi', colnames(data.dog))], 1, 
-          function(x) max(x) - min(x))
-data.dog$hjorthmob_range <- apply(data.dog[, grep('hjorthmob', colnames(data.dog))], 1, 
-          function(x) max(x) - min(x))
-data.dog$hjorthcom_range <- apply(data.dog[, grep('hjorthcom', colnames(data.dog))], 1,
-          function(x) max(x) - min(x))
-data.dog$pfd_range <- apply(data.dog[, grep('pfd', colnames(data.dog))], 1, 
-          function(x) max(x) - min(x))
-data.dog$mean_range <- apply(data.dog[, grep('mean', colnames(data.dog))], 1, 
-          function(x) max(x) - min(x))
-
-#set aside a validation set from the training set.. should implement ~10-fold cross validation at some point
-train <- sample(1:nrow(data.dog), .9*nrow(data.dog))
-dog.train <- data.dog[train, ]
-dog.validate <- data.dog[-train, ]
-
-
-#RRF func wants target out of the feature set
-target <- as.factor(dog.train$target)
-dog.train$target <- NULL
-
+dtrain <- FixUpData(dtrain)
+dtrain.dog <- FixUpData(dtrain.dog)
+dtrain.pat <- FixUpData(dtrain.pat)
+dtest <- FixUpData(dtest)
+dtest.dog <- FixUpData(dtest.dog)
+dtest.pat <- FixUpData(dtest.pat)
 
 Validate <- function(model, validation.set) {
   Predictions <- predict(model, validation.set[, !(colnames(validation.set) %in% c("target"))])
@@ -79,7 +119,17 @@ Validate <- function(model, validation.set) {
 }
 
 if (FALSE) {
-rf <- RRF(x=dog.train, y=target, ntree=501, maxnodes=101, importance=TRUE, do.trace=10, 
+set.seed(629)
+#set aside a validation set from the training set.. should implement ~10-fold cross validation at some point
+train.rows <- sample(1:nrow(dtrain), .9*nrow(dtrain))
+train <- dtrain[train.rows, ]
+validate <- dtrain[-train.rows, ]
+
+#RRF func wants target out of the feature set
+target <- as.factor(train[,'target'])
+train$target <- NULL
+
+rf <- RRF(x=train, y=target, ntree=501, maxnodes=244, importance=TRUE, do.trace=10, 
           coefReg=1, flagReg=1)
 impRF <- rf$importance
 impRF <- impRF[, "MeanDecreaseGini"]
@@ -89,25 +139,34 @@ imp <- impRF/(max(impRF))
 models <- vector("list")
 for (gamma in seq(.2, .95, .05)) {
   coefReg <- (1-gamma)+gamma*imp
-  grf <- RRF(x=dog.train, y=target, ntree=501, maxnodes=101, importance=TRUE, do.trace=10, 
+  grf <- RRF(x=train, y=target, ntree=501, maxnodes=244, importance=TRUE, do.trace=100, 
              coefReg=coefReg, flagReg=1)
-  models[[paste(gamma)]] <- c(grf, Validate(grf, dog.validate))
+  models[[paste(gamma)]] <- c(grf, Validate(grf, validate))
   print(paste("For gamma of",gamma,"and feature size of",length(grf$feaSet)))
 }
-}
 
+save(file="/home/kjs/repos/kaggle-aes-seizure-prediction/data/RRFModels.Rdata", models)
+
+class(models$`0.35`) <- "RRF"
+output <- predict(models$`0.35`, dtest, type="prob")
+res <- data.frame(clip=paste0(as.character(dtest.filen), ".mat"), 
+                  preictal=round(output[, 2], 4))
+res <- res[with(res, order(clip)), ]
+write.csv(res, row.names=FALSE, quote=FALSE,
+        file='/home/kjs/repos/kaggle-aes-seizure-prediction/data/predictions/prediction2.csv')
+
+if (FALSE) {
 #Messing with logistic regression
 formula <- "target ~ higuchi_e1 + pfd_e0 + hjorthcom_e14 + pfd_e7 + hjorthmob_e10 + hjorthmob_e14 +
                     maxval_e7 + meanval_e1 + hjorthcom_e0 + hjorthcom_e3 + hjorthcom_e5 + higuchi_e14 + 
                     higuchi_e12 + minval_e4 + pfd_e12 + pfd_e14 + minval_e12 + higuchi_sd + hjorthcom_sd + pfd_sd"
-glm <- glm(formula = formula, family="binomial", data=dog.train)
+glm <- glm(formula = formula, family="binomial", dtrain.train)
 glm.aic <- stepAIC(glm)
-glm.bayes <- bayesglm(formula=formula, family="binomial", data=dog.train)
+glm.bayes <- bayesglm(formula=formula, family="binomial", dtrain.train)
 Y <- dog.train$target
 X <- as.matrix(dog.train[, !(colnames(dog.train) %in% 'target')])
 glm.reg <- glmnet(x=X, y=Y, family="binomial")
 
-if (FALSE) {
 Y_VAL <- factor(dog.validate$target)
 X_VAL <- as.matrix(dog.validate[, !(colnames(dog.validate) %in% 'target')])
 
@@ -119,6 +178,4 @@ p <- predice(glm.reg, newx=X_VAL, type="response")
 dog.validate$predict <- p[,50]
 plot <- ggplot(dog.validate, aes(x=1:nrow(dog.validate), y=predict, color=target)) + geom_point(stat='identity')
 }
-
-
-
+}

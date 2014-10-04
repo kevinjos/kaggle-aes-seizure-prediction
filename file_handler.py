@@ -21,6 +21,7 @@ class FileHandler(object):
   def __init__(self):
     #Also prompted by GUI to choose a file name (film)
     self.file_in = 'Patient_1_preictal_segment_0009.mat'
+    self.file_in = 'Patient_1_test_segment_0001.mat'
 
   def set_data(self):
     self.file_in = "_".join(self.file_in.split("_")[0:2]) + "/" + self.file_in
@@ -33,7 +34,8 @@ class FileHandler(object):
     self.data_length_sec = self.data[1][0]
     self.frequency = self.data[2][0]
     self.electrode_names = self.data[3][0]
-    self.sequence_num = self.data[4]
+    if self.file_in.find('test') == -1:
+      self.sequence_num = self.data[4]
     
   def append_file_name(self):
     self.data[3] = np.append(self.data[3], self.file_in.split("/")[1])

@@ -7,6 +7,7 @@ import csv
 import time
 import mne
 import fftw3
+import random
 from decs import coroutine, timed
 from mpi4py import MPI
 
@@ -199,6 +200,8 @@ class FeatureExtractor(object):
       value = pyeeg.hurst(self.data[i])
       self.features[name] = value
 
+  '''
+  test features for data consistency
   def set_samplesize(self):
     for i in xrange(self.data.shape[0]):
       name = 'samplesize_e' + str(i)
@@ -228,6 +231,7 @@ class FeatureExtractor(object):
       name = 'minval_e' + str(i)
       value = str(np.min(self.data[i]))
       self.features[name] = value
+  '''
 
 @coroutine
 def record_features(fieldnames=[]):
@@ -252,13 +256,14 @@ def get_feature_names(max_e=24):
 
 def main():
   #Prepare for file I/O
+  #train_files = fh.seg_train_files['Patient']
   fh = file_handler.FileHandler()
   fh.set_train_interical_preictal_and_test_files()
   train_files = fh.seg_train_files['Dog']
   train_files.extend(fh.seg_train_files['Patient'])
-  #train_files = fh.seg_train_files['Patient']
   test_files = fh.all_test_files
   train_files.extend(test_files)
+  random.shuffle(train_files)
   train_files = np.array([np.array([f]) for f in train_files])
 
   #Prepare for MPI
@@ -310,7 +315,7 @@ def main():
       comm.Send([data_shape, MPI.INT], dest=proc, tag=2)
       comm.Send([fname, MPI.SIGNED_CHAR], dest=proc, tag=3)
       comm.Send([data, MPI.FLOAT], dest=proc, tag=4)
-      print "Sample %s data set number %s sent to process rank %s" % (train_files[i][0], i, proc)
+      print "%s, %s of %s, sent to process rank %s" % (fname[0], i, train_files.size, proc)
 
     #Cleanly exit execution by sending stop iteration signal to workers and closing feature record generator
     stop_iteration[0] = 1
