@@ -1,15 +1,23 @@
 #!/usr/bin/env python2.7
 
+from mne import utils
+utils.set_log_file(fname = '/home/kjs/logs/mne.log', overwrite=False)
+utils.set_log_level(verbose = True)
+utils.logger.propagate = True
+LOGGER = utils.logger
+
 import numpy as np
+from scipy.stats import skew, kurtosis
 import pyeeg
 import file_handler
 import csv
 import time
-import mne
-import fftw3
+from mne.filter import high_pass_filter, band_stop_filter
 import random
-from decs import coroutine, timed
+from decs import coroutine
 from mpi4py import MPI
+
+
 
 '''
 The feature extractor creates a features.csv file
@@ -27,21 +35,25 @@ class FeatureExtractor(object):
   def __init__(self, data):
     self.frequency = 0.0
     self.features = {}
-    self.fprime = {}
-    self.bin_power = {}
+    self.fod = {}
     self.svd_embed_seq = {}
     self.fft = {}
+    self.power_ratio = {}
     self.data = data
 
-  @timed
   def set_features(self, filen):
     self.set_filen(filen)
     self.apply_frequency()
-    self.apply_filters()
+    self.set_medianval()
     self.apply_first_order_diff()
-    self.apply_bin_power()
+    self.apply_artifact_removal()
+    self.apply_fft()
+    self.apply_filters()
+    self.apply_fft()
+    self.apply_first_order_diff()
     self.apply_svd_embed_seq()
-    #self.apply_fft()
+    self.apply_power_ratio()
+    self.set_hjorth()
     self.set_svd_entropy()
     self.set_fisher_info()
     self.set_meanval()
@@ -50,12 +62,10 @@ class FeatureExtractor(object):
     self.set_hjorth()
     self.set_higuchi()
     self.set_spectral_entropy()
-    #self.set_hurst()
-    #self.set_samplesize()
-    #self.set_firstval()
-    #self.set_lastval()
-    #self.set_maxval()
-    #self.set_minval()
+    self.set_line_length()
+    self.set_pfr()
+    self.set_skew()
+    self.set_kurtosis()
 
   def set_filen(self, filen):
     self.features['filen'] = filen.split('.')[0]
@@ -67,22 +77,26 @@ class FeatureExtractor(object):
       self.frequency = 5000.0
     elif self.features['filen'].find('fakefile') > -1:
       self.frequency = 128.0
-    else:
-      print "Oops, cannot find the correct frequencey for %s" % self.features['filen']
 
   def apply_filters(self):
-    Fs = self.frequency
+    Fs = int(self.frequency)
     Nf = int(Fs/2)
     lr = np.array([(x*60)-2 for x in range(1, Nf/60+1)], dtype=np.float64)
     hr = np.array([(x*60)+2 for x in range(1, Nf/60+1)], dtype=np.float64)
-    for i in xrange(self.data.shape[0]):
-      self.data[i] = mne.filter.band_stop_filter(
-                      x = self.data[i], Fs = Fs, Fp1 = lr, Fp2 = hr,
-                      copy=True, verbose='WARNING', n_jobs='cuda')
-      self.data[i] = mne.filter.high_pass_filter(
-                      x = self.data[i], Fs = Fs, Fp = 0.4, trans_bandwidth = 0.05, 
-                      filter_length=int(np.floor(Fs*32)), copy = True, n_jobs = 'cuda',
-                      verbose='WARNING')
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      self.data[e] = high_pass_filter(x = self.data[e], Fs = Fs, Fp = 0.4, 
+                                      trans_bandwidth = 0.05, copy = False,
+                                      filter_length=int(np.floor(Fs*32)), verbose=False)
+      '''
+      efft = self.fft['fft_e' + str(e)]
+      line_ratio = (np.mean(efft[:,60])/np.mean(efft[:,50:58]) + 
+                    np.mean(efft[:,60])/np.mean(efft[:,63:70])) / 2
+      if line_ratio > 1.5:
+      '''
+      self.data[e] = band_stop_filter(x = self.data[e], Fs = Fs, Fp1 = lr, Fp2 = hr, 
+                                        copy = False, verbose=False)
 
   def apply_fft(self):
     '''
@@ -91,151 +105,237 @@ class FeatureExtractor(object):
                                 [fft_2s], ...
                                 [fft_ns]]
     '''
-    Fs = int(self.frequency)
-    window = Fs
+    window = int(self.frequency)
     Nf = window/2
-    for i in xrange(self.data.shape[0]):
-      name = 'fft_e' + str(i)
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'fft_e' + str(e)
       value = np.array([], dtype=np.float64)
-      for j in xrange(0, int(self.data[i].size), window):
-        input = np.array(self.data[i][j:j+window], dtype=np.float64)
-        output = np.zeros(input.size, dtype='complex')
-        plan = fftw3.Plan(input, output)
-        plan.execute()
-        output = output[:int(window/2.0)]
-        if j == 0 and output.size == Nf:
-          value = np.append(value, output)
-        elif j == window and output.size == Nf:
-          value = np.append([value], [output], axis=0)
-        elif output.size == Nf:
-          value = np.append(value, [output], axis=0)
-        else:
-          continue
+      for j in xrange(0, int(self.data[e].size), window):
+        ffte = np.fft.rfft(np.array(self.data[e][j:j+window], dtype=np.float64))[1:]
+        if j == 0 and ffte.size == Nf:
+          value = np.append(value, ffte)
+        elif j == window and ffte.size == Nf:
+          value = np.append([value], [ffte], axis=0)
+        elif ffte.size == Nf:
+          value = np.append(value, [ffte], axis=0)
       self.fft[name] = np.abs(value)
 
   def apply_first_order_diff(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'first_order_diff_e' + str(i)
-      value = pyeeg.first_order_diff(self.data[i])
-      self.fprime[name] = value
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'e' + str(e)
+      value = pyeeg.first_order_diff(self.data[e])
+      self.fod[name] = value
 
-  def apply_bin_power(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'bin_power_e' + str(i)
-      power, power_ratio = pyeeg.bin_power(self.data[i], [0.5, 4, 7, 12, 30],
-                                           int(self.frequency))
-      self.bin_power[name] = (power, power_ratio)
+  def apply_power_ratio(self):
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'power_ratio_e' + str(e)
+      fft = self.fft['fft_e' + str(e)]
+      value = sum(fft)/np.sum(fft)
+      self.power_ratio[name] = value
+  
+  def set_medianval(self):
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'median_e' + str(e)
+      value = np.median(self.data[e])
+      self.features[name] = value
+
+  def apply_artifact_removal(self):
+    loc_plateau = int(self.frequency/6)
+    for e in xrange(self.data.shape[0]):
+      local_i = -1
+      points_in_plateau = 0
+      fod = self.fod['e' + str(e)]
+      for i in xrange(len(fod)):
+        local = 0
+        if fod[i] == 0 and i > local_i:
+          local_i = i + 1
+          local += 2
+          for local_i in xrange(local_i, len(fod) - 1):
+            if fod[local_i] == 0:
+              local += 1
+            elif local >= loc_plateau:
+              points_in_plateau += local
+              self.data[e, i-1:local_i-1] = self.features['median_e' + str(e)]
+              break
+            else:
+              break
+      perc_plateau = float(points_in_plateau) / float(self.data.shape[1])
+      if perc_plateau >= 0.05:
+        print "Dropping Channel %s in %s" % (e, self.features['filen'])
+        self.data[e] = np.zeros(1)
+      else:
+        name = 'percent_plateau_e' + str(e)
+        value = perc_plateau
+        self.features[name] = value
 
   def apply_svd_embed_seq(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'svd_embed_seq_e' + str(i)
-      embed_seq = pyeeg.embed_seq(self.data[i], 2, 20)
-      value = np.linalg.svd(embed_seq, compute_uv = 0)
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'svd_embed_seq_e' + str(e)
+      value = pyeeg.embed_seq(self.data[e], 4, 20)
+      value = np.linalg.svd(value, compute_uv = 0)
+      value /= sum(value)
       self.svd_embed_seq[name] = value
 
   def set_svd_entropy(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'svd_entropy_e' + str(i)
-      value = pyeeg.svd_entropy(W = self.svd_embed_seq['svd_embed_seq_e' + str(i)])
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'svd_entropy_e' + str(e)
+      value = pyeeg.svd_entropy(W = self.svd_embed_seq['svd_embed_seq_e' + str(e)])
       self.features[name] = value
 
   def set_fisher_info(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'fisher_e' + str(i)
-      value = pyeeg.fisher_info(W = self.svd_embed_seq['svd_embed_seq_e' + str(i)])
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'fisher_e' + str(e)
+      value = pyeeg.fisher_info(W = self.svd_embed_seq['svd_embed_seq_e' + str(e)])
       self.features[name] = value
 
   def set_meanval(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'mean_e' + str(i)
-      value = np.mean(self.data[i])
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'mean_e' + str(e)
+      value = np.mean(self.data[e])
       self.features[name] = value
   
   def set_dfa(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'dfa_e' + str(i)
-      value = pyeeg.dfa(self.data[i], Ave = self.features['mean_e' + str(i)])
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'dfa_e' + str(e)
+      value = pyeeg.dfa(self.data[e], Ave = self.features['mean_e' + str(e)])
       self.features[name] = value
   
   def set_pfd(self):
-    '''
-    petrosian fractal dimension
-    '''
-    for i in xrange(self.data.shape[0]):
-      name = 'pfd_e' + str(i)
-      value = pyeeg.pfd(self.data[i], self.fprime['first_order_diff_e' + str(i)])
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'pfd_e' + str(e)
+      value = pyeeg.pfd(self.data[e], self.fod['e' + str(e)])
       self.features[name] = value
 
   def set_spectral_entropy(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'spectral_entropy_e' + str(i)
-      pr = self.bin_power['bin_power_e' + str(i)][1]
-      band = [0.5, 4, 7, 12, 30]
-      value = pyeeg.spectral_entropy(self.data[i], band, int(self.frequency), Power_Ratio=pr)
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'spectral_entropy_e' + str(e)
+      pr = self.power_ratio['power_ratio_e' + str(e)]
+      value = pyeeg.spectral_entropy(self.data[e], range(len(pr)), int(self.frequency), pr)
       self.features[name] = value
 
   def set_hjorth(self):
-    for i in xrange(self.data.shape[0]):
-      mob_name = 'hjorthmob_e' + str(i)
-      com_name = 'hjorthcom_e' + str(i)
-      mobility_value, complexity_value = pyeeg.hjorth(self.data[i], 
-                                                    self.fprime['first_order_diff_e' + str(i)])
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      mob_name = 'hjorthmob_e' + str(e)
+      com_name = 'hjorthcom_e' + str(e)
+      mobility_value, complexity_value = pyeeg.hjorth(self.data[e], self.fod['e' + str(e)])
       self.features[mob_name] = mobility_value
       self.features[com_name] = complexity_value
     
   def set_higuchi(self):
     kmax = 4
-    for i in xrange(self.data.shape[0]):
-      name = 'higuchi_e' + str(i)
-      value = pyeeg.hfd(self.data[i], kmax)
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'higuchi_e' + str(e)
+      value = pyeeg.hfd(self.data[e], kmax)
       self.features[name] = value
 
-  def set_hurst(self):
+  def set_line_length(self):
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'line_length_e' + str(e)
+      fod = self.fod['e' + str(e)]
+      value = np.sum(np.sqrt(1+x**2) for x in fod)/fod.size
+      self.features[name] = value
+
+  def set_pfr(self):
+    nf = int(self.frequency/2)
+    def isprime(number):  
+      if number<=1:  
+        return 0  
+      check=2  
+      maxneeded=number  
+      while check<maxneeded+1:  
+        maxneeded=number/check  
+        if number%check==0:  
+            return 0  
+        check+=1  
+      return 1 
+    primes = [x for x in xrange(nf) if isprime(x)]
+    nprimes = [x for x in xrange(nf) if not isprime(x)]
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'pfr_e' + str(e)
+      power_ratio = self.power_ratio['power_ratio_e' + str(e)]
+      value = np.sum(power_ratio[primes])/np.sum(power_ratio[nprimes])
+      self.features[name] = value
+
+  def set_amp_diff(self):
+    data = np.delete(fe.data, [x for x in range(fe.data.shape[0]) if np.all(fe.data[x]==0)], 0)
+    mn, mx, ave, sd, snr = self.calc_stats(np.std(data[:,x]) for x in xrange(data.shape[1]))
+    name = 'mean_amp_diff'
+    self.features[name] = ave
+    name = 'max_amp_diff'
+    self.features[name] = mx
+    name = 'min_amp_diff'
+    self.features[name] = mn
+    name = 'std_amp_diff'
+    self.features[name] = std
+    name = 'snr_amp_diff'
+    self.features[name] = snr
+
+  def set_skew(self):
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'skew_e' + str(e)
+      value = skew(self.data[e])
+      self.features[name] = value
+    
+  def set_kurtosis(self):
+    for e in xrange(self.data.shape[0]):
+      if np.all(self.data[e][:1000] == 0):
+        continue
+      name = 'kurtosis_e' + str(e)
+      value = kurtosis(self.data[e])
+      self.features[name] = value
+
+  def calc_stats(gen):
     '''
-    n squared -- takes long time
-    we should try this with data compression
+    Input: generator
+    Returns: min, max, mean, std and snr
     '''
-    for i in xrange(self.data.shape[0]):
-      name = 'hurst_e' + str(i)
-      value = pyeeg.hurst(self.data[i])
-      self.features[name] = value
-
-  '''
-  test features for data consistency
-  def set_samplesize(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'samplesize_e' + str(i)
-      value = str(self.data[i].size)
-      self.features[name] = value
-
-  def set_firstval(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'firstval_e' + str(i)
-      value = str(self.data[i][0])
-      self.features[name] = value
-
-  def set_lastval(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'lastval_e' + str(i)
-      value = str(self.data[i][-1])
-      self.features[name] = value
-
-  def set_maxval(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'maxval_e' + str(i)
-      value = str(np.max(self.data[i]))
-      self.features[name] = value
-
-  def set_minval(self):
-    for i in xrange(self.data.shape[0]):
-      name = 'minval_e' + str(i)
-      value = str(np.min(self.data[i]))
-      self.features[name] = value
-  '''
+    minimum, maximum, total, count = 2**16, -2**16, 0, 0
+    for x in gen:
+      minimum = min(minimum, x)
+      maximum = max(maximum, x)
+      total += x
+      total_squared += x*x
+      count += 1
+    mean = total/count
+    standard_deviation = np.sqrt(total_squared/count - total*total/count/count)
+    snr = mean/standard_deviation
+    return (minimum, maximum, mean, standard_deviation, snr)
 
 @coroutine
 def record_features(fieldnames=[]):
-  feature_file = '/home/kjs/repos/kaggle-aes-seizure-prediction/features.csv'
+  feature_file = '/home/kjs/repos/kaggle-aes-seizure-prediction/data/20141111features.csv'
   try:
     f = open(feature_file, 'a')
     writer = csv.DictWriter(f, fieldnames)
@@ -248,23 +348,47 @@ def record_features(fieldnames=[]):
 
 def get_feature_names(max_e=24):
   fakedata = np.array([np.array([np.random.random_integers(-2**16, 2**16) 
-                                for i in range(8192)], dtype=np.float64) 
+                                for i in range(1024)], dtype=np.float64) 
                                 for i in range(max_e)], dtype=np.float64)
   fe = FeatureExtractor(fakedata)
   fe.set_features('fakefile')
-  return fe.features.keys()
+  names = fe.features.keys()
+  del fe
+  return names
+
+def sort_files(fh):
+  '''
+  memory cannot handle doing 5x samples at 5000Hz at once.
+  stagger 5000Hz samples
+  '''
+  #Prepare for file I/O
+  fh.set_train_interical_preictal_and_test_files()
+  small_train_files = fh.seg_train_files['Dog']
+  small_train_files.extend(fh.seg_test_files['Dog'])
+  large_train_files = fh.seg_train_files['Patient']
+  large_train_files.extend(fh.seg_test_files['Patient'])
+  train_files = []
+  ratio = int(np.floor(len(small_train_files)/len(large_train_files))) - 1
+  for i in range(len(small_train_files)):
+    train_files.append(small_train_files[i])
+    if i % ratio == 0 and int(i/ratio) < int(np.floor(len(large_train_files))):
+      train_files.append(large_train_files[int(i/ratio)])
+  with open('/home/kjs/repos/kaggle-aes-seizure-prediction/data/archive/20141101features.csv') as f:
+    dw = csv.DictReader(f)
+    done_files = set()
+    for line in dw:
+      done_files.add(line['filen'])
+  unfinished_files = []
+  for f in train_files:
+    fm = f.split('.')[0].strip()
+    if fm not in done_files:
+      unfinished_files.append(f)
+  train_files = unfinished_files    
+  train_files = np.array([np.array([f]) for f in train_files])
+  print len(train_files)
+  return train_files
 
 def main():
-  #Prepare for file I/O
-  #train_files = fh.seg_train_files['Patient']
-  fh = file_handler.FileHandler()
-  fh.set_train_interical_preictal_and_test_files()
-  train_files = fh.seg_train_files['Dog']
-  train_files.extend(fh.seg_train_files['Patient'])
-  test_files = fh.all_test_files
-  train_files.extend(test_files)
-  random.shuffle(train_files)
-  train_files = np.array([np.array([f]) for f in train_files])
 
   #Prepare for MPI
   comm = MPI.COMM_WORLD
@@ -277,6 +401,8 @@ def main():
   data_shape = np.zeros(2, dtype=np.int32)
 
   if rank == 0:
+    fh = file_handler.FileHandler()
+    train_files = sort_files(fh)
     #Prepare tabular feature file header
     feature_names = get_feature_names()
     rf = record_features(feature_names)
@@ -285,11 +411,14 @@ def main():
     total_responses = 0
     expected_responses = train_files.size
     for i in xrange(expected_responses):
+      del fh
+      fh = file_handler.FileHandler()
       #Prepare the data for MPI C type send
       fh.file_in = train_files[i][0]
       fh.set_data()
-      data = np.array([np.array(fh.data[0][j], dtype=np.float64) 
-                      for j in xrange(fh.data[0].shape[0])], dtype=np.float64)
+      electrodes = fh.data[0].shape[0]
+      data = np.array([np.array(fh.data[0][e], dtype=np.float64) for e in range(electrodes)],
+                       dtype=np.float64)
 
       #Calculate the shape of the data to make the correctly sized buffer
       data_shape = np.array(data.shape, dtype=np.int32)
@@ -315,12 +444,12 @@ def main():
       comm.Send([data_shape, MPI.INT], dest=proc, tag=2)
       comm.Send([fname, MPI.SIGNED_CHAR], dest=proc, tag=3)
       comm.Send([data, MPI.FLOAT], dest=proc, tag=4)
-      print "%s, %s of %s, sent to process rank %s" % (fname[0], i, train_files.size, proc)
+      LOGGER.info("%s, %s of %s, sent to process rank %s" % (fname[0], i, train_files.size, proc))
 
     #Cleanly exit execution by sending stop iteration signal to workers and closing feature record generator
     stop_iteration[0] = 1
     while total_responses != expected_responses:
-      time.sleep(5)
+      time.sleep(1)
       for proc in xrange(1, size):
         if comm.Iprobe(source=proc, tag=55):
           total_responses += 1
@@ -348,9 +477,12 @@ def main():
       #Make and send feature set
       fe = FeatureExtractor(data)
       fe.set_features(fname[0])
-      comm.send(fe.features, dest=0, tag=55)
+      features = fe.features
+      del fe
+      comm.send(features, dest=0, tag=55)
 
-  print "Closing process of rank %s" % rank
+  LOGGER.info("Closing process of rank %s" % rank)
       
 if __name__ == '__main__':
   main()
+

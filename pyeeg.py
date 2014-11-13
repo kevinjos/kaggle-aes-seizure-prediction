@@ -152,7 +152,7 @@ def embed_seq(X,Tau,D):
   
 
   """
-  N =len(X)
+  N = X.size
 
   if D * Tau > N:
     print "Cannot build such a matrix, because D * Tau > N" 
@@ -162,11 +162,9 @@ def embed_seq(X,Tau,D):
     print "Tau has to be at least 1"
     exit()
 
-  Y=np.zeros((N - (D - 1) * Tau, D))
-  for i in xrange(0, N - (D - 1) * Tau):
-    for j in xrange(0, D):
-      Y[i][j] = X[i + j * Tau]
+  Y = np.array([np.array([X[i+j*Tau] for j in xrange(D)]) for i in xrange(N-(D-1)*Tau)])
   return Y
+
 
 def in_range(Template, Scroll, Distance):
   """Determines whether one vector is the the range of another vector.
@@ -303,6 +301,7 @@ def first_order_diff(X):
     Y = [x(2) - x(1) , x(3) - x(2), ..., x(N) - x(N-1)]
     
   """
+  X = np.append(0, X)
   return np.array([X[i]-X[i-1] for i in xrange(1, X.size)], dtype=np.int64)
 
 def pfd(X, D=None):
@@ -396,18 +395,13 @@ def hjorth(X, D = None):
   if D is None:
     D = first_order_diff(X)
 
-  D = np.append(np.array(X[0], dtype=np.int32), D) # pad the first difference
-
   n = X.size
 
   M2 = float(np.sum(D ** 2)) / n
   TP = np.sum(X ** 2)
-  M4 = 0.0
-  for i in xrange(1, D.size):
-    M4 += (D[i] - D[i - 1]) ** 2
-  M4 = M4 / n
+  M4 = np.sum((D[i] - D[i - 1])**2 for i in xrange(1, D.size)) / n
   
-  return np.sqrt(M2 / TP), np.sqrt(M4 * TP / M2 / M2)  # Hjorth Mobility and Complexity
+  return np.sqrt(M2 / TP), np.sqrt((float(M4) * TP) / (M2**2))  #Hjorth Mobility and Complexity
 
 def spectral_entropy(X, Band, Fs, Power_Ratio = None):
   """Compute spectral entropy of a time series from either two cases below:
@@ -462,7 +456,7 @@ def spectral_entropy(X, Band, Fs, Power_Ratio = None):
     Power, Power_Ratio = bin_power(X, Band, Fs)
 
   Spectral_Entropy = 0
-  for i in xrange(0, len(Power_Ratio) - 1):
+  for i in xrange(len(Power_Ratio) - 1):
     Spectral_Entropy += Power_Ratio[i] * np.log(Power_Ratio[i])
   Spectral_Entropy /= np.log(len(Power_Ratio))  # to save time, minus one is omitted
   return -1 * Spectral_Entropy
@@ -505,7 +499,7 @@ def fisher_info(X = None, Tau = None, DE = None, W = None):
   """ Compute Fisher information of a time series from either two cases below:
   1. X, a time series, with lag Tau and embedding dimension DE (default)
   2. W, a list of normalized singular values, i.e., singular spectrum (if W is
-     provided, recommended to speed up.)
+      provided, recommended to speed up.)
 
   If W is None, the function will do as follows to prepare singular spectrum:
 
@@ -570,7 +564,7 @@ def fisher_info(X = None, Tau = None, DE = None, W = None):
     W /= sum(W)  
   
   FI = 0
-  for i in xrange(0, len(W) - 1):  # from 1 to M
+  for i in xrange(len(W) - 1):  # from 1 to M
     FI += ((W[i +1] - W[i]) ** 2) / (W[i])
   
   return FI

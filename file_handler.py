@@ -45,10 +45,14 @@ class FileHandler(object):
     self.segmented_train_files is a dictionary with two keys, interictal and preictal
     each key has a set for a value of all data from all subjects in the give category
     '''
-    self.all_train_files, self.all_test_files, self.segmented_train_files, self.seg_train_files = [], [], {}, {}
+    self.all_train_files, self.all_test_files = [], []
+    self.segmented_train_files, self.seg_train_files = {}, {}
+    self.segmented_test_files, self.seg_test_files = {}, {}
     P, I, D, H = 'preictal', 'interictal', 'Dog', 'Patient'
     self.segmented_train_files[I], self.segmented_train_files[P] = [], []
     self.seg_train_files[D], self.seg_train_files[H] = [], []
+    self.segmented_test_files[I], self.segmented_test_files[P] = [], []
+    self.seg_test_files[D], self.seg_test_files[H] = [], []
     
     subjects = os.listdir(self.DATA_DIR)
     for subject in subjects:
@@ -64,3 +68,34 @@ class FileHandler(object):
         self.seg_train_files[D].append(f)
       elif f.find(H) > -1:
         self.seg_train_files[H].append(f) 
+    for f in self.all_test_files:
+      if f.find(D) > -1:
+        self.seg_test_files[D].append(f)
+      elif f.find(H) > -1:
+        self.seg_test_files[H].append(f) 
+
+  def arrange_files_by_subject_by_type(self):
+    self.set_train_interical_preictal_and_test_files()
+    subjects = set()
+    for fname in self.all_train_files:
+      subjects.add("_".join(fname.split("_")[:2]))
+    res = {}
+    all_files = self.all_train_files
+    all_files.extend(self.all_test_files)
+    for subject in subjects:
+      res[subject] = {'train':set(), 'test':set()}
+      for filen in all_files:
+        if filen.find(subject) > -1:
+          if filen.find('test') > -1:
+            res[subject]['test'].add(filen)
+          else:
+            res[subject]['train'].add(filen)
+    return res
+
+
+
+
+
+
+
+
